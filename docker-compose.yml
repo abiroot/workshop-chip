@@ -1,0 +1,83 @@
+version: "3.8"
+#
+# Services definitions
+#
+services:
+  app:
+    image: kooldev/php:8.3-nginx
+    ports:
+      - "${KOOL_APP_PORT:-80}:80"
+    environment:
+      ASUSER: "${KOOL_ASUSER:-0}"
+      UID: "${UID:-0}"
+    volumes:
+      - .:/app:delegated
+    networks:
+      - kool_local
+      - kool_global
+  database:
+    image: mysql/mysql-server:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    ports:
+      - "${KOOL_DATABASE_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD-rootpass}"
+      MYSQL_DATABASE: "${DB_DATABASE-database}"
+      MYSQL_USER: "${DB_USERNAME-user}"
+      MYSQL_PASSWORD: "${DB_PASSWORD-pass}"
+      MYSQL_ALLOW_EMPTY_PASSWORD: 1
+    volumes:
+      - database:/var/lib/mysql:delegated
+    networks:
+      - kool_local
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping"]
+    entrypoint: sh -c "
+        echo 'Creating initial databases...';
+        /entrypoint.sh --default-authentication-plugin=mysql_native_password &
+        sleep 10;
+        echo 'Creating test database...';
+        mysql -u root -p${DB_PASSWORD-pass} -e 'CREATE DATABASE IF NOT EXISTS ${DB_DATABASE_TEST-test_bl1nk}';
+        wait
+        "
+      # do not use in production!
+  mailhog:
+      # Official Docker Image: https://hub.docker.com/r/mailhog/mailhog/
+      image: mailhog/mailhog:latest
+      environment:
+          - MH_STORAGE=maildir
+      # volumes:
+      #   - ./docker/mailhog/maildir:/maildir:rw,delegated
+      ports:
+          - "8025:8025"
+      networks:
+          - kool_local
+  swagger-ui:
+      image: swaggerapi/swagger-ui
+      container_name: chip-bv3-swagger-ui
+      volumes:
+          - ./openapi:/usr/share/nginx/html/swagger
+      environment:
+          API_URL: swagger/chip.yaml
+      ports:
+          - "8080:8080"
+  cache:
+    image: redis:7-alpine
+    volumes:
+      - cache:/data:delegated
+    networks:
+      - kool_local
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+#
+# Networks definitions
+#
+networks:
+  kool_local:
+  kool_global:
+    external: true
+    name: "${KOOL_GLOBAL_NETWORK:-kool_global}"
+volumes:
+  database:
+  cache:
